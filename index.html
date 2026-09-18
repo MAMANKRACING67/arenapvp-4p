@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PvP Arena Complex - Ultimate Edition</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #0a0a0c; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #fff; }
+    
+    #gameCanvas { display: block; width: 100vw; height: 100vh; background: #121216; }
+
+    #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    .interactive { pointer-events: auto; }
+
+    /* Overlay Screen */
+    #menu-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10, 10, 12, 0.92); display: flex; flex-direction: column;
+      justify-content: center; align-items: center; gap: 20px; z-index: 10;
+      backdrop-filter: blur(8px);
+    }
+
+    .dashboard { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 1100px; width: 90%; }
+    
+    .card { 
+      background: #18181c; padding: 20px; border-radius: 12px; border: 1px solid #2a2a32; 
+      flex: 1; min-width: 300px; max-width: 340px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      display: flex; flex-direction: column; gap: 10px; text-align: left;
+    }
+    
+    .card h3 { color: #7f5af0; border-bottom: 1px solid #2a2a32; padding-bottom: 8px; font-size: 18px; }
+
+    input, select, button { width: 100%; padding: 10px 14px; border-radius: 6px; border: none; font-size: 14px; font-weight: bold; }
+    input, select { background: #0f0f12; color: #fff; border: 1px solid #2a2a32; }
+    select:focus, input:focus { outline: none; border-color: #7f5af0; }
+    
+    button { background: #7f5af0; color: #fff; cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
+    button:hover { background: #6b46c1; transform: translateY(-2px); }
+    .btn-green { background: #2cb67d; }
+    .btn-green:hover { background: #249666; }
+    .btn-danger { background: #ff5470; }
+    .btn-danger:hover { background: #d64157; }
+
+    /* HUD In-Game */
+    #hud { 
+      position: absolute; top: 20px; left: 20px; right: 20px; 
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 16px; font-weight: bold; pointer-events: none; z-index: 5;
+    }
+    .hud-box { background: rgba(24, 24, 28, 0.85); padding: 10px 18px; border-radius: 8px; border: 1px solid #2a2a32; backdrop-filter: blur(4px); }
+    .coin-val { color: #ffd700; text-shadow: 0 0 8px rgba(255, 215, 0, 0.4); }
+
+    /* Controls Helper */
+    .controls-info { font-size: 11px; color: #94a1b2; margin-top: 5px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="ui-layer">
+    <!-- HUD IN-GAME -->
+    <div id="hud">
+      <div class="hud-box">
+        Koin: <span id="hud-coins" class="coin-val">0</span> 💰
+      </div>
+      <div class="hud-box">
+        Status: <span id="hud-status" style="color:#2cb67d;">Lobby</span>
+      </div>
+    </div>
+
+    <!-- MENU UTAMA / LOBBY -->
+    <div id="menu-overlay" class="interactive">
+      <h1 style="color:#7f5af0; font-size: 36px; letter-spacing: 2px; text-shadow: 0 0 12px rgba(127,90,240,0.5);">PVP ARENA COMPLEX</h1>
+      
+      <div class="dashboard">
+        <!-- 1. KONEKSI NETWORK -->
+        <div class="card">
+          <h3>1. Koneksi Mabar (Lokal)</h3>
+          <button class="btn-green" onclick="hostRoom()">Buat Room (Host)</button>
+          <input type="text" id="join-code" placeholder="Masukkan Kode SDP Host">
+          <button onclick="joinRoom()">Gabung Room</button>
+          <div class="controls-info">
+            *Gunakan Wi-Fi/Hotspot lokal yang sama tanpa internet. Salin-tempel kode SDP untuk menyambungkan P2P.
+          </div>
+        </div>
+
+        <!-- 2. GACHA SYSTEM -->
+        <div class="card">
+          <h3>2. Toko Gacha (100 Koin)</h3>
+          <p>Koin Anda: <span id="menu-coins" class="coin-val">0</span> 💰</p>
+          <button class="btn-green" onclick="spinGacha()">Putar Gacha (100 💰)</button>
+          <div id="gacha-res" style="font-size: 12px; color: #2cb67d; min-height: 36px; padding: 6px; background:#0f0f12; border-radius:4px; border:1px solid #2a2a32;">
+            Hasil Gacha akan tampil di sini...
+          </div>
+        </div>
+
+        <!-- 3. LOADOUT PERTEMPURAN -->
+        <div class="card">
+          <h3>3. Loadout Peralatan</h3>
+          <label style="font-size: 12px; color: #94a1b2;">Senjata Utama:</label>
+          <select id="sel-weapon" onchange="updateItemDesc()"></select>
+
+          <label style="font-size: 12px; color: #94a1b2;">Armor Pertahanan:</label>
+          <select id="sel-armor" onchange="updateItemDesc()"></select>
+
+          <label style="font-size: 12px; color: #94a1b2;">Skill Spesial (Space):</label>
+          <select id="sel-skill" onchange="updateItemDesc()"></select>
+
+          <div id="item-desc" style="font-size: 11px; color: #7f5af0; background: #0f0f12; padding: 8px; border-radius: 4px; border: 1px solid #2a2a32;">-</div>
+
+          <button class="btn-green" style="margin-top: 10px;" onclick="startGame()">MASUK ARENA</button>
+        </div>
+      </div>
+
+      <div class="controls-info" style="text-align: center; max-width: 600px;">
+        <b>KONTROL:</b> [W, A, S, D] / [Panah] = Bergerak | [J] = Serang | [SPACE] = Skill Spesial<br>
+        <i>*Kalahkan lawan di arena untuk mendapatkan +200 Koin per kill!</i>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. SOUND SYNTHESIZER (WEB AUDIO API) - SFX TANPA FILE EXTERNAL
+    // =========================================================================
+    class SoundManager {
+      constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      playHit() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+      }
+
+      playShoot() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.2);
+      }
+
+      playSkill() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(800, this.ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.25);
+      }
+
+      playGachaWin() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        let notes = [261.63, 329.63, 392.00, 523.25];
+        notes.forEach((freq, idx) => {
+          let osc = this.ctx.createOscillator();
+          let gain = this.ctx.createGain();
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.08);
+          gain.gain.setValueAtTime(0.2, this.ctx.currentTime + idx * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + idx * 0.08 + 0.2);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + idx * 0.08);
+          osc.stop(this.ctx.currentTime + idx * 0.08 + 0.2);
+        });
+      }
+
+      playKill() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(600, this.ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.4);
+      }
+    }
+    const sound = new SoundManager();
+
+    // =========================================================================
+    // 2. DATA ITEM & EFEK SPESIFIK (WEAPON, ARMOR, SKILL)
+    // =========================================================================
+    const WEAPONS = {
+      "Pedang": { name: "Pedang Kayu", type: "melee", damage: 15, range: 60, cd: 350, desc: "Serangan jarak dekat standar." },
+      "Katana": { name: "Katana Iblis", type: "melee", damage: 25, range: 75, cd: 250, desc: "Serangan tebasan cepat dan berjangkauan luas." },
+      "Tombak": { name: "Tombak Naga", type: "melee", damage: 35, range: 110, cd: 600, desc: "Jangkauan sangat jauh dengan damage besar." },
+      "Sihir": { name: "Tongkat Api", type: "ranged", damage: 20, speed: 10, cd: 400, desc: "Menembakkan proyektil api lurus." },
+      "Panah": { name: "Busur Angin", type: "ranged", damage: 14, speed: 16, cd: 200, desc: "Tembakan panah sangat cepat bertubi-tubi." },
+      "Menebas": { name: "Kapak Raksasa", type: "melee", damage: 50, range: 50, cd: 900, desc: "Serangan lambat tapi menghancurkan HP lawan." }
+    };
+
+    const ARMORS = {
+      "Basic": { name: "Baju Kain", hp: 0, speedBonus: 0, desc: "Tidak memberikan perlindungan." },
+      "Besi": { name: "Armor Besi", hp: 50, speedBonus: -0.5, desc: "Menambah +50 HP, sedikit memperlambat gerakan." },
+      "Emas": { name: "Armor Emas", hp: 100, speedBonus: -1, desc: "Menambah +100 HP, mengurangi kecepatan." },
+      "Bayangan": { name: "Jubah Bayangan", hp: 25, speedBonus: 2, desc: "Menambah +25 HP dan membuat pergerakan sangat cepat." },
+      "Mistik": { name: "Jubah Mistik", hp: 150, speedBonus: 0, desc: "Armor legendaris dengan bonus +150 HP." }
+    };
+
+    const SKILLS = {
+      "Dash": { name: "Sprint Dash", cd: 3000, desc: "Menerjang ke depan dengan cepat." },
+      "Heal": { name: "Pulih Darah", cd: 6000, desc: "Memulihkan 45 HP seketika." },
+      "Nuke": { name: "Ledakan Area", cd: 8000, desc: "Memicu gelombang ledakan di sekitar pemain." },
+      "Teleport": { name: "Langkah Bayangan", cd: 5000, desc: "Teleportasi acak mendekati posisi aman." },
+      "Shield": { name: "Perisai Energi", cd: 7000, desc: "Membuat perisai yang menyerap serangan." }
+    };
+
+    // Inventory Pemain (Memulai dengan item dasar)
+    let inventory = {
+      weapons: ["Pedang"],
+      armors: ["Basic"],
+      skills: ["Dash"]
+    };
+
+    let coins = 0;
+    let myId = null;
+    let isHost = false;
+    let inGame = false;
+
+    // Canvas Setup
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Game Engine State
+    let gameState = {
+      players: {},
+      projectiles: [],
+      particles: []
+    };
+
+    let keys = {};
+    window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+    // Populate Loadout Options
+    function initLoadoutUI() {
+      const fillSelect = (id, list, data) => {
+        const el = document.getElementById(id);
+        el.innerHTML = "";
+        list.forEach(k => {
+          let opt = document.createElement("option");
+          opt.value = k;
+          opt.innerText = data[k].name;
+          el.appendChild(opt);
+        });
+      };
+
+      fillSelect("sel-weapon", inventory.weapons, WEAPONS);
+      fillSelect("sel-armor", inventory.armors, ARMORS);
+      fillSelect("sel-skill", inventory.skills, SKILLS);
+      updateItemDesc();
+    }
+
+    function updateItemDesc() {
+      let w = WEAPONS[document.getElementById("sel-weapon").value];
+      let a = ARMORS[document.getElementById("sel-armor").value];
+      let s = SKILLS[document.getElementById("sel-skill").value];
+      
+      document.getElementById("item-desc").innerHTML = 
+        `<b>${w.name}:</b> ${w.desc}<br>` +
+        `<b>${a.name}:</b> ${a.desc}<br>` +
+        `<b>${s.name}:</b> ${s.desc}`;
+    }
+
+    // =========================================================================
+    // 3. SISTEM GACHA & ECONOMY
+    // =========================================================================
+    function addCoins(amount) {
+      coins += amount;
+      document.getElementById("hud-coins").innerText = coins;
+      document.getElementById("menu-coins").innerText = coins;
+    }
+
+    function spinGacha() {
+      if (coins < 100) return alert("Koin tidak cukup! Kalahkan lawan di arena terlebih dahulu.");
+      coins -= 100;
+      addCoins(0);
+
+      // Pool Gacha
+      const pool = [
+        { cat: "weapons", key: "Katana", data: WEAPONS },
+        { cat: "weapons", key: "Tombak", data: WEAPONS },
+        { cat: "weapons", key: "Sihir", data: WEAPONS },
+        { cat: "weapons", key: "Panah", data: WEAPONS },
+        { cat: "weapons", key: "Menebas", data: WEAPONS },
+        { cat: "armors", key: "Besi", data: ARMORS },
+        { cat: "armors", key: "Emas", data: ARMORS },
+        { cat: "armors", key: "Bayangan", data: ARMORS },
+        { cat: "armors", key: "Mistik", data: ARMORS },
+        { cat: "skills", key: "Heal", data: SKILLS },
+        { cat: "skills", key: "Nuke", data: SKILLS },
+        { cat: "skills", key: "Teleport", data: SKILLS },
+        { cat: "skills", key: "Shield", data: SKILLS }
+      ];
+
+      const item = pool[Math.floor(Math.random() * pool.length)];
+      const itemData = item.data[item.key];
+
+      if (!inventory[item.cat].includes(item.key)) {
+        inventory[item.cat].push(item.key);
+        sound.playGachaWin();
+        document.getElementById("gacha-res").innerHTML = `<span style="color:#2cb67d">SELAMAT! Dapatkan: <b>${itemData.name}</b></span>`;
+        initLoadoutUI();
+      } else {
+        addCoins(50); // Cashback jika duplikat
+        document.getElementById("gacha-res").innerHTML = `Dapat duplikat (<b>${itemData.name}</b>). Diubah menjadi +50 Koin!`;
+      }
+    }
+
+    // =========================================================================
+    // 4. WEBRTC P2P NATIVE NETWORK (OFFLINE WI-FI LOKAL)
+    // =========================================================================
+    let rtcPeer = new RTCPeerConnection({ iceServers: [] });
+    let dataChannel = null;
+
+    function hostRoom() {
+      isHost = true;
+      myId = 0;
+      dataChannel = rtcPeer.createDataChannel("game");
+      setupChannel(dataChannel);
+
+      rtcPeer.createOffer().then(o => rtcPeer.setLocalDescription(o)).then(() => {
+        rtcPeer.onicecandidate = e => {
+          if (!e.candidate) {
+            const code = btoa(JSON.stringify(rtcPeer.localDescription));
+            prompt("Salin KODE ROOM ini dan berikan ke Player 2:", code);
+            const answer = prompt("Masukkan KODE BALASAN dari Player 2:");
+            if (answer) rtcPeer.setRemoteDescription(JSON.parse(atob(answer)));
+          }
+        };
+      });
+    }
+
+    function joinRoom() {
+      isHost = false;
+      myId = 1;
+      const code = document.getElementById("join-code").value.trim();
+      if (!code) return alert("Masukkan Kode SDP Room!");
+
+      rtcPeer.setRemoteDescription(JSON.parse(atob(code)));
+      rtcPeer.createAnswer().then(a => rtcPeer.setLocalDescription(a)).then(() => {
+        rtcPeer.onicecandidate = e => {
+          if (!e.candidate) {
+            const answerCode = btoa(JSON.stringify(rtcPeer.localDescription));
+            prompt("Salin KODE BALASAN ini ke Host:", answerCode);
+          }
+        };
+      });
+
+      rtcPeer.ondatachannel = e => {
+        dataChannel = e.channel;
+        setupChannel(dataChannel);
+      };
+    }
+
+    function setupChannel(channel) {
+      channel.onopen = () => {
+        document.getElementById("hud-status").innerText = "Terhubung (P2P Active)!";
+      };
+      channel.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "SYNC") gameState = msg.state;
+        if (msg.type === "INPUT") handleInput(msg.id, msg.keys);
+        if (msg.type === "KILL_REWARD" && msg.killerId === myId) {
+          addCoins(200);
+          sound.playKill();
+        }
+      };
+    }
+
+    // =========================================================================
+    // 5. GAMEPLAY LOGIC & ENGINE LOOP
+    // =========================================================================
+    function createParticles(x, y, color, count = 8) {
+      for (let i = 0; i < count; i++) {
+        gameState.particles.push({
+          x: x, y: y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          color: color, life: 1.0
+        });
+      }
+    }
+
+    function startGame() {
+      document.getElementById("menu-overlay").style.display = "none";
+      inGame = true;
+
+      const wKey = document.getElementById("sel-weapon").value;
+      const aKey = document.getElementById("sel-armor").value;
+      const sKey = document.getElementById("sel-skill").value;
+
+      let armorStats = ARMORS[aKey];
+
+      gameState.players[myId] = {
+        x: myId === 0 ? 150 : canvas.width - 150,
+        y: canvas.height / 2,
+        hp: 100 + armorStats.hp,
+        maxHp: 100 + armorStats.hp,
+        speed: 5 + armorStats.speedBonus,
+        weaponKey: wKey,
+        armorKey: aKey,
+        skillKey: sKey,
+        color: myId === 0 ? "#7f5af0" : "#2cb67d",
+        lastAtt: 0,
+        skillCd: 0,
+        shieldActive: false,
+        shieldEndTime: 0,
+        dirX: 1, dirY: 0
+      };
+
+      initLoadoutUI();
+      startGameLoop();
+    }
+
+    function handleInput(id, pKeys) {
+      let p = gameState.players[id];
+      if (!p || p.hp <= 0) return;
+
+      let dx = 0, dy = 0;
+      if (pKeys["a"] || pKeys["arrowleft"]) dx -= 1;
+      if (pKeys["d"] || pKeys["arrowright"]) dx += 1;
+      if (pKeys["w"] || pKeys["arrowup"]) dy -= 1;
+      if (pKeys["s"] || pKeys["arrowdown"]) dy += 1;
+
+      if (dx !== 0 || dy !== 0) {
+        p.x += dx * p.speed;
+        p.y += dy * p.speed;
+        p.dirX = dx; p.dirY = dy;
+      }
+
+      // Boundary Clamp
+      p.x = Math.max(25, Math.min(canvas.width - 25, p.x));
+      p.y = Math.max(25, Math.min(canvas.height - 25, p.y));
+
+      // SKILL TRIGGER (Space)
+      if (pKeys[" "] && Date.now() > p.skillCd) {
+        p.skillCd = Date.now() + SKILLS[p.skillKey].cd;
+        sound.playSkill();
+
+        if (p.skillKey === "Dash") {
+          p.x += p.dirX * 120;
+          p.y += p.dirY * 120;
+          createParticles(p.x, p.y, p.color, 12);
+        } else if (p.skillKey === "Heal") {
+          p.hp = Math.min(p.maxHp, p.hp + 45);
+          createParticles(p.x, p.y, "#2cb67d", 15);
+        } else if (p.skillKey === "Nuke") {
+          createParticles(p.x, p.y, "#ff5470", 30);
+          for (let otherId in gameState.players) {
+            if (otherId == id) continue;
+            let target = gameState.players[otherId];
+            if (Math.hypot(p.x - target.x, p.y - target.y) < 180) {
+              applyDamage(id, target, 40);
+            }
+          }
+        } else if (p.skillKey === "Teleport") {
+          p.x = Math.random() * (canvas.width - 200) + 100;
+          p.y = Math.random() * (canvas.height - 200) + 100;
+          createParticles(p.x, p.y, "#7f5af0", 15);
+        } else if (p.skillKey === "Shield") {
+          p.shieldActive = true;
+          p.shieldEndTime = Date.now() + 3000;
+        }
+      }
+
+      // ATTACK TRIGGER (J Key)
+      if (pKeys["j"] && Date.now() > p.lastAtt) {
+        let w = WEAPONS[p.weaponKey];
+        p.lastAtt = Date.now() + w.cd;
+
+        if (w.type === "melee") {
+          sound.playHit();
+          createParticles(p.x + p.dirX * 30, p.y + p.dirY * 30, p.color, 6);
+
+          for (let otherId in gameState.players) {
+            if (otherId == id) continue;
+            let target = gameState.players[otherId];
+            let dist = Math.hypot(p.x - target.x, p.y - target.y);
+
+            if (dist <= w.range) {
+              applyDamage(id, target, w.damage);
+            }
+          }
+        } else if (w.type === "ranged") {
+          sound.playShoot();
+          gameState.projectiles.push({
+            ownerId: id,
+            x: p.x, y: p.y,
+            vx: (p.dirX || 1) * w.speed,
+            vy: p.dirY * w.speed,
+            damage: w.damage,
+            color: p.color
+          });
+        }
+      }
+    }
+
+    function applyDamage(killerId, target, dmg) {
+      if (target.shieldActive && Date.now() < target.shieldEndTime) return; // Shield Absorbs
+
+      target.hp -= dmg;
+      createParticles(target.x, target.y, "#ff5470", 8);
+
+      if (target.hp <= 0) {
+        if (killerId == myId) {
+          addCoins(200);
+          sound.playKill();
+        } else if (dataChannel) {
+          dataChannel.send(JSON.stringify({ type: "KILL_REWARD", killerId: parseInt(killerId) }));
+        }
+      }
+    }
+
+    function update() {
+      if (!inGame) return;
+
+      // Update Shield State
+      for (let id in gameState.players) {
+        let p = gameState.players[id];
+        if (p.shieldActive && Date.now() > p.shieldEndTime) {
+          p.shieldActive = false;
+        }
+      }
+
+      // Host Process World State & Projectiles
+      if (isHost) {
+        handleInput(0, keys);
+
+        // Update Proyektil
+        for (let i = gameState.projectiles.length - 1; i >= 0; i--) {
+          let proj = gameState.projectiles[i];
+          proj.x += proj.vx;
+          proj.y += proj.vy;
+
+          // Hit Collision
+          for (let id in gameState.players) {
+            if (id == proj.ownerId) continue;
+            let target = gameState.players[id];
+            if (target.hp > 0 && Math.hypot(proj.x - target.x, proj.y - target.y) < 25) {
+              applyDamage(proj.ownerId, target, proj.damage);
+              gameState.projectiles.splice(i, 1);
+              break;
+            }
+          }
+
+          // Out of Bounds Removal
+          if (proj && (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height)) {
+            gameState.projectiles.splice(i, 1);
+          }
+        }
+
+        // Broadcast State ke Client
+        if (dataChannel && dataChannel.readyState === "open") {
+          dataChannel.send(JSON.stringify({ type: "SYNC", state: gameState }));
+        }
+      } else if (dataChannel && dataChannel.readyState === "open") {
+        // Client Send Input ke Host
+        dataChannel.send(JSON.stringify({ type: "INPUT", id: myId, keys: keys }));
+      }
+
+      // Update Local Particle Physics
+      for (let i = gameState.particles.length - 1; i >= 0; i--) {
+        let pt = gameState.particles[i];
+        pt.x += pt.vx;
+        pt.y += pt.vy;
+        pt.life -= 0.04;
+        if (pt.life <= 0) gameState.particles.splice(i, 1);
+      }
+    }
+
+    // =========================================================================
+    // 6. RENDERING ENGINE
+    // =========================================================================
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!inGame) return;
+
+      // Draw Grid Background Arena
+      ctx.strokeStyle = "#1a1a22";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 50) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 50) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      }
+
+      // Draw Particles
+      gameState.particles.forEach(pt => {
+        ctx.fillStyle = pt.color;
+        ctx.globalAlpha = pt.life;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      });
+
+      // Draw Projectiles
+      gameState.projectiles.forEach(proj => {
+        ctx.fillStyle = proj.color;
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Draw Players
+      for (let id in gameState.players) {
+        let p = gameState.players[id];
+        if (p.hp <= 0) continue;
+
+        // Player Body
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw Shield Effect
+        if (p.shieldActive) {
+          ctx.strokeStyle = "#00d2ff";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 28, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // HP Bar Background
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(p.x - 25, p.y - 35, 50, 6);
+
+        // HP Bar Fill
+        ctx.fillStyle = p.hp > (p.maxHp * 0.3) ? "#2cb67d" : "#ff5470";
+        ctx.fillRect(p.x - 25, p.y - 35, Math.max(0, (p.hp / p.maxHp) * 50), 6);
+
+        // Player Label
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 11px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(`P${parseInt(id) + 1} [${WEAPONS[p.weaponKey].name}]`, p.x, p.y - 42);
+      }
+    }
+
+    function startGameLoop() {
+      setInterval(() => {
+        update();
+        draw();
+      }, 1000 / 60);
+    }
+
+    // Initialize Menu UI
+    initLoadoutUI();
+  </script>
+</body>
+</html>
